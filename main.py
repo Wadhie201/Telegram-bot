@@ -181,19 +181,19 @@ def next_n_sunthu(n:int=10):
 # --- Bot handlers ---
 async def set_commands(app):
     await app.bot.set_my_commands([
-        ('start','Start the bot'),
-        ('schedule','Make a booking'),
-        ('mybookings','View your bookings'),
-        ('cancel','Cancel current action')
+        ('ابدأ','Start the bot'),
+        ('حجز موعد','Make a booking'),
+        ('مواعيدي','View your bookings'),
+        ('الغاء الموعد','Cancel current action')
     ])
 
 async def start(update:Update, context:ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Welcome — use /schedule to make a booking (Sun–Thu).")
+    await update.message.reply_text("اهلا بك  — يمكنك حجز موعد لتقديم طلبك الان")
 
 
 async def schedule_start(update:Update, context:ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
-    await update.message.reply_text("How many documents/photos will you upload for this booking? (send a number)")
+    await update.message.reply_text("كم عدد الملفات التي ترغب في رفعها ؟ (برجاء إدخال رقم)")
     return ASK_FILE_COUNT
 
 async def receive_file_count(update:Update, context:ContextTypes.DEFAULT_TYPE):
@@ -203,7 +203,7 @@ async def receive_file_count(update:Update, context:ContextTypes.DEFAULT_TYPE):
         if count < 1:
             raise ValueError()
     except Exception:
-        await update.message.reply_text("Please enter a valid number (1 or more).")
+        await update.message.reply_text("برجاء ادخال أرقام فقط")
         return ASK_FILE_COUNT
     context.user_data['file_count'] = count
     context.user_data['received_files'] = []
@@ -217,7 +217,7 @@ async def receive_file_count(update:Update, context:ContextTypes.DEFAULT_TYPE):
             row = []
     if row:
         keyboard.append(row)
-    await update.message.reply_text("Please choose a booking date:", reply_markup=InlineKeyboardMarkup(keyboard))
+    await update.message.reply_text("من فضلك اختار موعد للزيارة ", reply_markup=InlineKeyboardMarkup(keyboard))
     return ASK_DATE
 
 async def receive_date_callback(update:Update, context:ContextTypes.DEFAULT_TYPE):
@@ -225,18 +225,18 @@ async def receive_date_callback(update:Update, context:ContextTypes.DEFAULT_TYPE
     await query.answer()
     data = query.data
     if not data.startswith("date:"):
-        await query.edit_message_text("Invalid selection.")
+        await query.edit_message_text("إختيار خاطئ")
         return ConversationHandler.END
     date_str = data.split(":",1)[1]
     user = query.from_user
     if user_has_booking_for_date(user.id, date_str):
-        await query.edit_message_text(f"You already have a booking on {date_str}. Cannot schedule twice.")
+        await query.edit_message_text(f"بالفغل لديك موعد محدد {date_str}. لاتستطيع الحجز مرة اخري الان")
         return ConversationHandler.END
     if count_approved_for_date(date_str) >= 10:
-        await query.edit_message_text(f"{date_str} is fully booked. Choose another date.")
+        await query.edit_message_text(f"{date_str} التاريخ المحدد ملئ برجاء اختيار موعد اخر")
         return ConversationHandler.END
     context.user_data['chosen_date'] = date_str
-    await query.edit_message_text(f"Selected date: {date_str}\nNow please upload {context.user_data['file_count']} file(s)/photo(s). You can send them one-by-one. Use /cancel to stop.")
+    await query.edit_message_text(f"موعد الزيارة هو  {date_str}\nبرجاء رفع {context.user_data['file_count']} ملف/صورة. يمكنك رفع الملفات واحد تلو الاخر. إضغط الغاء للتوقف")
     return ASK_DOC
 
 async def receive_file(update:Update, context:ContextTypes.DEFAULT_TYPE):
@@ -254,12 +254,12 @@ async def receive_file(update:Update, context:ContextTypes.DEFAULT_TYPE):
         file_name = f"photo_{user.id}_{int(datetime.utcnow().timestamp())}.jpg"
         file_type = "photo"
     else:
-        await update.message.reply_text("Send a photo or document file.")
+        await update.message.reply_text("ارسل صورة او ملف")
         return ASK_DOC
     context.user_data.setdefault('received_files', []).append((file_id, file_type, file_name))
     remaining = context.user_data['file_count'] - len(context.user_data['received_files'])
     if remaining > 0:
-        await update.message.reply_text(f"Received. Send {remaining} more file(s)." )
+        await update.message.reply_text(f"مستلم. مرسل {remaining} ملفات اخري" )
         return ASK_DOC
     date_str = context.user_data['chosen_date']
     booking_id = create_booking(user.id, user.username or "", date_str)
@@ -275,7 +275,7 @@ async def receive_file(update:Update, context:ContextTypes.DEFAULT_TYPE):
             save_admin_message(booking_id, admin_id, msg.message_id)
         except Exception as e:
             logger.exception("Failed to send booking %s to admin %s: %s", booking_id, admin_id, e)
-    await update.message.reply_text("Booking submitted and pending admin approval. You'll be notified when decision is made.")
+    await update.message.reply_text("في انتظار موافقة المسئولين لتأكيد طلبك")
     return ConversationHandler.END
 
 async def admin_approve_reject(update:Update, context:ContextTypes.DEFAULT_TYPE):
@@ -289,7 +289,7 @@ async def admin_approve_reject(update:Update, context:ContextTypes.DEFAULT_TYPE)
     booking_id = int(booking_id_str)
     booking = get_booking(booking_id)
     if not booking:
-        await query.edit_message_text("Booking not found.")
+        await query.edit_message_text("لم يتم تحديد موعد")
         return
     _, user_id, username, date_str, status = booking
     admin_msgs = get_admin_messages(booking_id)
