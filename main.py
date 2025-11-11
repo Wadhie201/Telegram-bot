@@ -147,10 +147,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def schedule_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     today = datetime.utcnow().date()
     dates = []
-    for i in range(1, 15):
+    min_allowed = today + timedelta(days=2)
+    for i in range(2, 16):  # start from 2 days ahead
         dt = today + timedelta(days=i)
-        if is_allowed_weekday(dt):
+        if dt >= min_allowed and is_allowed_weekday(dt):
             dates.append(dt)
+
 
     keyboard = []
     row = []
@@ -181,6 +183,15 @@ async def receive_date_button(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     date_str = data.split(':')[1]
     dt = datetime.strptime(date_str, '%Y-%m-%d').date()
+
+    min_allowed = datetime.utcnow().date() + timedelta(days=2)
+    if dt < min_allowed:
+        await query.edit_message_text(
+            "Date too soon. Please run /schedule again and select a valid date."
+        )    
+        return ConversationHandler.END
+
+    
 
     # enforce 2-day advance
     if dt < (datetime.utcnow().date() + timedelta(days=2)):
