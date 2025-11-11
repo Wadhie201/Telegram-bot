@@ -1,5 +1,5 @@
 """
-Telegram Scheduling Bot with file count and date buttons
+Telegram Scheduling Bot with file count, date buttons, duplicate prevention, and admin notifications
 """
 
 import os
@@ -92,6 +92,15 @@ def count_bookings_for_date(date_str):
     return count
 
 
+def has_user_booking_for_date(user_id, date_str):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM bookings WHERE user_id=? AND date=? AND status!='REJECTED'", (user_id, date_str))
+    (count,) = cur.fetchone()
+    conn.close()
+    return count > 0
+
+
 def get_pending_bookings():
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
@@ -135,10 +144,11 @@ def user_bookings(user_id):
     conn.close()
     return rows
 
+
 # --- Helpers ---
 def is_allowed_weekday(dt):
     # Sun=6, Mon=0 ... Thu=3
-    return dt.weekday() in (6,0,1,2,3)
+    return dt.weekday() in (6, 0, 1, 2, 3)
 
 
 # --- Handlers ---
@@ -194,12 +204,14 @@ async def receive_date_button(update: Update, context: ContextTypes.DEFAULT_TYPE
         return ConversationHandler.END
 
     date_str = data.split(':')[1]
-    dt = datetime.strptime(date_str, '%Y-%m-%d').date()
-    min_allowed = datetime.utcnow().date() + timedelta(days=2)
-    if dt < min_allowed or not is_allowed_weekday(dt):
-        await query.edit_message_text("Date not allowed. Start again with /schedule.")
+
+    user = query.from_user
+    # prevent duplicate booking for same user/date
+    if has_user_booking_for_date(user.id, date_str):
+        await query.edit_message_text(f"You already have a booking for {date_str}. Cannot schedule twice.")
         return ConversationHandler.END
 
+    # enforce max 10 per day
     if count_bookings_for_date(date_str) >= 10:
         await query.edit_message_text("Sorry, that date is fully booked. Start again with /schedule.")
         return ConversationHandler.END
@@ -279,14 +291,18 @@ async def approve_reject_callback(update: Update, context: ContextTypes.DEFAULT_
             set_booking_status(booking_id, 'REJECTED')
             await context.bot.send_message(chat_id=user_id, text=f"Your booking #{booking_id} rejected: date full.")
             await query.edit_message_text(f"Booking #{booking_id} rejected automatically: date full.")
+            # Notify admin
+            await context.bot.send_message(chat_id=ADMIN_ID, text=f"Booking #{booking_id} rejected automatically: date full.")
             return
         set_booking_status(booking_id, 'APPROVED')
         await context.bot.send_message(chat_id=user_id, text=f"Your booking #{booking_id} for {date_str} has been APPROVED.")
         await query.edit_message_text(f"Booking #{booking_id} APPROVED.")
     else:
         set_booking_status(booking_id, 'REJECTED')
-        await context.bot.send_message(chat_id=user_id, text=f"Your booking #{booking_id} for {date_str} has been REJECTED.")
+        await context.bot.send_message(chat_id=user_id, text=f"Your booking #{booking_id} for {date_str} has been REJECTED by admin.")
         await query.edit_message_text(f"Booking #{booking_id} REJECTED.")
+        # Notify admin
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Booking #{booking_id} rejected successfully.")
 
 
 async def mybookings(update: Update, context: ContextTypes.DEFAULT_TYPE):
