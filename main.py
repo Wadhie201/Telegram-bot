@@ -156,6 +156,16 @@ def next_n_sunthu(n:int=10):
 
 # --- Bot handlers ---
 # --- New /help command ---
+# --- Set bot commands on startup ---
+async def set_commands(app):
+    await app.bot.set_my_commands([
+        ('start','إبدأ من جديد'),
+        ('schedule','حجز موعد'),
+        ('mybookings','عرض مواعيدي'),
+        ('cancel','الغاء العملية الحالية'),
+        ('help','قائمة الأوامر')
+    ])
+
 async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = (
         "Available Commands:\n\n"
