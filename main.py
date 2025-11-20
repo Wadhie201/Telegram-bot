@@ -1,5 +1,5 @@
 """
-Telegram Scheduling Bot — Clean Overwrite
+Telegram Scheduling Bot — Full Clean Version
 Features:
 - Multi-admin approval (ADMIN_IDS env var, comma-separated)
 - Shows 10 upcoming Sun–Thu dates as inline buttons
@@ -8,7 +8,8 @@ Features:
 - Max reservations per date = 15
 - Admin approve / reject flow
 - Rejection reason
-- /mybookings shows user's bookings
+- /mybookings shows user's bookings anytime
+- /help shows commands anytime
 - /cancel works anytime
 """
 
@@ -155,8 +156,6 @@ def next_n_sunthu(n:int=10):
     return dates
 
 # --- Bot handlers ---
-# --- New /help command ---
-# --- Set bot commands on startup ---
 async def set_commands(app):
     await app.bot.set_my_commands([
         ('start','إبدأ من جديد'),
@@ -165,6 +164,9 @@ async def set_commands(app):
         ('cancel','الغاء العملية الحالية'),
         ('help','قائمة الأوامر')
     ])
+
+async def start(update:Update, context:ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("اهلا بك في هيئة الدواء المصرية فرع لمنيا — يمكنك حجز موعد لتقديم طلبك الأن برجاء الضغط علي زر MENU للبدء")
 
 async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = (
@@ -177,7 +179,6 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(help_text)
 
-# --- Ensure /mybookings handler exists for users ---
 async def mybookings_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user
     rows = get_user_bookings(user.id)
@@ -186,10 +187,6 @@ async def mybookings_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
     lines = [f"#{r[0]} — {r[1]} — {r[2]}" for r in rows]
     await update.message.reply_text("حجوزاتك:\n" + "\n".join(lines))
-
-
-async def start(update:Update, context:ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("اهلا بك في هيئة الدواء المصرية فرع لمنيا — يمكنك حجز موعد لتقديم طلبك الأن برجاء الضغط علي زر MENU للبدء")
 
 async def schedule_start(update:Update, context:ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
@@ -204,11 +201,7 @@ async def schedule_start(update:Update, context:ContextTypes.DEFAULT_TYPE):
 async def receive_option(update:Update, context:ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    data = query.data
-    if not data.startswith("option:"):
-        await query.edit_message_text("إختيار خاطئ")
-        return ConversationHandler.END
-    option = data.split(":",1)[1]
+    option = query.data.split(":",1)[1]
     context.user_data['option'] = option
     await query.edit_message_text("من فضلك ارسل اسم المٌجدول ورقم التعريف الخاص به")
     return ASK_SCHEDULER_INFO
@@ -237,12 +230,9 @@ async def receive_scheduler_info(update:Update, context:ContextTypes.DEFAULT_TYP
 async def receive_date_callback(update:Update, context:ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    data = query.data
-    if not data.startswith("date:"):
-        await query.edit_message_text("إختيار خاطئ")
-        return ConversationHandler.END
-    date_str = data.split(":",1)[1]
+    date_str = query.data.split(":",1)[1]
     user = query.from_user
+
     if user_has_booking_for_date(user.id, date_str):
         await query.edit_message_text(f"بالفعل لديك موعد محدد {date_str}. لا تستطيع الحجز مرة أخرى الآن")
         return ConversationHandler.END
@@ -252,7 +242,6 @@ async def receive_date_callback(update:Update, context:ContextTypes.DEFAULT_TYPE
 
     option = context.user_data.get('option', '')
     scheduler_info = context.user_data.get('scheduler_info', '')
-
     booking_id = create_booking(user.id, user.username or "", option, scheduler_info, date_str)
 
     caption = (
@@ -264,8 +253,10 @@ async def receive_date_callback(update:Update, context:ContextTypes.DEFAULT_TYPE
         f"Date: {date_str}"
     )
 
-    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("Approve", callback_data=f"approve:{booking_id}"),
-                                      InlineKeyboardButton("Reject", callback_data=f"reject:{booking_id}")]])
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("Approve", callback_data=f"approve:{booking_id}"),
+         InlineKeyboardButton("Reject", callback_data=f"reject:{booking_id}")]
+    ])
 
     for admin_id in ADMIN_IDS:
         try:
@@ -281,15 +272,13 @@ async def admin_approve_reject(update:Update, context:ContextTypes.DEFAULT_TYPE)
     query = update.callback_query
     await query.answer()
     admin = query.from_user
-    data = query.data
-    if not data:
-        return
-    action, booking_id_str = data.split(":",1)
+    action, booking_id_str = query.data.split(":",1)
     booking_id = int(booking_id_str)
     booking = get_booking(booking_id)
     if not booking:
         await query.edit_message_text("لم يتم تحديد موعد")
         return
+
     _, user_id, username, option, scheduler_info, date_str, status = booking
 
     # Remove buttons for all admins
@@ -341,15 +330,6 @@ async def admin_rejection_reason_handler(update:Update, context:ContextTypes.DEF
     await context.bot.send_message(chat_id=user_id, text=f"تم رفض حجزك #{booking_id} لـ {date_str} من قبل {admin.first_name}.\nالسبب: {reason}")
     await update.message.reply_text(f"تم رفض الحجز #{booking_id} وإرسال الإشعارات.")
 
-async def mybookings_handler(update:Update, context:ContextTypes.DEFAULT_TYPE):
-    user = update.message.from_user
-    rows = get_user_bookings(user.id)
-    if not rows:
-        await update.message.reply_text("ليس لديك أي حجوزات.")
-        return
-    lines = [f"#{r[0]} — {r[1]} — {r[2]}" for r in rows]
-    await update.message.reply_text("حجوزاتك:\n" + "\n".join(lines))
-
 async def cancel_handler(update:Update, context:ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     await update.message.reply_text("تم إلغاء العملية الحالية.", reply_markup=ReplyKeyboardRemove())
@@ -366,7 +346,12 @@ def main():
             ASK_SCHEDULER_INFO: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_scheduler_info)],
             ASK_DATE: [CallbackQueryHandler(receive_date_callback, pattern=r"^date:")],
         },
-        fallbacks=[CommandHandler("cancel", cancel_handler), CommandHandler("start", start)]
+        fallbacks=[
+            CommandHandler("cancel", cancel_handler),
+            CommandHandler("start", start),
+            CommandHandler("mybookings", mybookings_handler),
+            CommandHandler("help", help_handler)
+        ]
     )
 
     app.add_handler(CommandHandler("start", start))
@@ -374,8 +359,8 @@ def main():
     app.add_handler(CallbackQueryHandler(admin_approve_reject, pattern=r"^(approve|reject):"))
     app.add_handler(MessageHandler(filters.TEXT & filters.User(ADMIN_IDS), admin_rejection_reason_handler))
     app.add_handler(CommandHandler("mybookings", mybookings_handler))
-    app.add_handler(CommandHandler("cancel", cancel_handler))
     app.add_handler(CommandHandler("help", help_handler))
+    app.add_handler(CommandHandler("cancel", cancel_handler))
 
     logger.info("Bot starting...")
     app.run_polling()
