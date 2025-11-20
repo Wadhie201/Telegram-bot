@@ -201,7 +201,6 @@ async def schedule_start(update:Update, context:ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("فتح منشأة صيدلية", callback_data="option:فتح")],
         [InlineKeyboardButton("غلق منشأة صيدلية", callback_data="option:غلق")],
-        [InlineKeyboardButton("فتح وغلق", callback_data="option:فتح وغلق")]
     ]
     await update.message.reply_text("برجاء اختيار نوع الحجز:", reply_markup=InlineKeyboardMarkup(keyboard))
     return ASK_OPTION
