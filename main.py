@@ -245,7 +245,7 @@ async def receive_scheduler_info(update:Update, context:ContextTypes.DEFAULT_TYP
         except Exception as e:
             logger.exception("Failed to send booking %s to admin %s: %s", booking_id, admin_id, e)
 
-    await update.message.reply_text("تم إرسال الطلب في انتظار موافقة المسئولين لتأكيد حجزك")
+    await update.message.reply_text("تم إرسال الطلب الي المسئولين وفي انتظار الموافقة وسيتم اخبار سيادتكم بموعد الزيارة ")
     return ConversationHandler.END
 
 async def admin_approve_reject(update:Update, context:ContextTypes.DEFAULT_TYPE):
