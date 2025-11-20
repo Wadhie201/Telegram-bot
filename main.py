@@ -1,16 +1,15 @@
 """
-Telegram Scheduling Bot — Full Clean Version
+Telegram Scheduling Bot — Auto Date Assignment
 Features:
 - Multi-admin approval (ADMIN_IDS env var, comma-separated)
-- Shows 10 upcoming Sun–Thu dates as inline buttons
-- Asks user for option (فتح — غلق — فتح وغلق)
-- Asks scheduler name & ID
+- Users choose option (فتح — غلق — فتح وغلق) and provide scheduler info
 - Max reservations per date = 15
 - Admin approve / reject flow
 - Rejection reason
-- /mybookings shows user's bookings anytime
-- /help shows commands anytime
+- Upon approval, earliest free date (Sun–Thu, <15 bookings) is assigned automatically
+- /mybookings shows user's bookings
 - /cancel works anytime
+- /help shows commands
 """
 
 import os
@@ -37,7 +36,7 @@ logging.basicConfig(format="%(asctime)s %(levelname)s %(message)s", level=loggin
 logger = logging.getLogger(__name__)
 
 # --- Conversation states ---
-ASK_OPTION, ASK_SCHEDULER_INFO, ASK_DATE = range(3)
+ASK_OPTION, ASK_SCHEDULER_INFO = range(2)
 
 # --- In-memory pending rejection map: admin_id -> booking_id ---
 pending_rejections = {}
@@ -53,7 +52,7 @@ def init_db():
             username TEXT,
             option TEXT,
             scheduler_info TEXT,
-            date TEXT NOT NULL,
+            date TEXT,
             status TEXT NOT NULL,
             created_at TEXT NOT NULL
         )
@@ -68,13 +67,13 @@ def init_db():
     conn.commit()
     conn.close()
 
-def create_booking(user_id:int, username:str, option:str, scheduler_info:str, date_str:str) -> int:
+def create_booking(user_id:int, username:str, option:str, scheduler_info:str) -> int:
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute("""
         INSERT INTO bookings (user_id, username, option, scheduler_info, date, status, created_at)
-        VALUES (?, ?, ?, ?, ?, 'PENDING', ?)
-    """, (user_id, username, option, scheduler_info, date_str, datetime.utcnow().isoformat()))
+        VALUES (?, ?, ?, ?, NULL, 'PENDING', ?)
+    """, (user_id, username, option, scheduler_info, datetime.utcnow().isoformat()))
     booking_id = cur.lastrowid
     conn.commit()
     conn.close()
@@ -109,6 +108,13 @@ def set_booking_status(booking_id:int, status:str):
     conn.commit()
     conn.close()
 
+def set_booking_date(booking_id:int, date_str:str):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("UPDATE bookings SET date = ? WHERE id = ?", (date_str, booking_id))
+    conn.commit()
+    conn.close()
+
 def count_approved_for_date(date_str:str) -> int:
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
@@ -116,22 +122,6 @@ def count_approved_for_date(date_str:str) -> int:
     (cnt,) = cur.fetchone()
     conn.close()
     return cnt
-
-def user_has_booking_for_date(user_id:int, date_str:str) -> bool:
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute("SELECT COUNT(*) FROM bookings WHERE user_id = ? AND date = ? AND status != 'REJECTED'", (user_id, date_str))
-    (cnt,) = cur.fetchone()
-    conn.close()
-    return cnt > 0
-
-def get_user_bookings(user_id:int):
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute("SELECT id, date, status FROM bookings WHERE user_id = ? ORDER BY created_at DESC", (user_id,))
-    rows = cur.fetchall()
-    conn.close()
-    return rows
 
 def get_booking(booking_id:int):
     conn = sqlite3.connect(DB_PATH)
@@ -141,19 +131,33 @@ def get_booking(booking_id:int):
     conn.close()
     return row
 
+def get_user_bookings(user_id:int):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("SELECT id, date, status FROM bookings WHERE user_id = ? ORDER BY created_at DESC", (user_id,))
+    rows = cur.fetchall()
+    conn.close()
+    return rows
+
 # --- Helpers ---
 def is_allowed_weekday(dt:datetime) -> bool:
     return dt.weekday() in (6,0,1,2,3)  # Sun-Thu
 
-def next_n_sunthu(n:int=10):
+def next_n_sunthu(n:int=30):
     dates = []
     today = datetime.utcnow().date()
     d = today
     while len(dates) < n:
         d = d + timedelta(days=1)
-        if d >= (today + timedelta(days=2)) and is_allowed_weekday(datetime.combine(d, datetime.min.time())):
+        if is_allowed_weekday(datetime.combine(d, datetime.min.time())):
             dates.append(d.isoformat())
     return dates
+
+def earliest_available_date():
+    for d in next_n_sunthu():
+        if count_approved_for_date(d) < 15:
+            return d
+    return None
 
 # --- Bot handlers ---
 async def set_commands(app):
@@ -164,9 +168,6 @@ async def set_commands(app):
         ('cancel','الغاء العملية الحالية'),
         ('help','قائمة الأوامر')
     ])
-
-async def start(update:Update, context:ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(" اهلا بك في هيئة الدواء المصرية فرع لمنيا — يمكنك حجز موعد لتقديم طلبك الأن وسيتم الارسال لاحد المديرين للتحقق من طلبك, برجاء الضغط علي Menu للبدء")
 
 async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = (
@@ -179,7 +180,7 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(help_text)
 
-async def mybookings_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def mybookings_handler(update:Update, context:ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user
     rows = get_user_bookings(user.id)
     if not rows:
@@ -187,6 +188,9 @@ async def mybookings_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
     lines = [f"#{r[0]} — {r[1]} — {r[2]}" for r in rows]
     await update.message.reply_text("حجوزاتك:\n" + "\n".join(lines))
+
+async def start(update:Update, context:ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("اهلا بك في هيئة الدواء المصرية فرع لمنيا — يمكنك حجز موعد لتقديم طلبك الأن برجاء الضغط علي زر MENU للبدء")
 
 async def schedule_start(update:Update, context:ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
@@ -203,7 +207,7 @@ async def receive_option(update:Update, context:ContextTypes.DEFAULT_TYPE):
     await query.answer()
     option = query.data.split(":",1)[1]
     context.user_data['option'] = option
-    await query.edit_message_text("من فضلك ارسل اسم المٌجدول ورقم التعريف الخاص به في نفس الرسالة")
+    await query.edit_message_text("من فضلك ارسل اسم المٌجدول ورقم التعريف الخاص به")
     return ASK_SCHEDULER_INFO
 
 async def receive_scheduler_info(update:Update, context:ContextTypes.DEFAULT_TYPE):
@@ -213,50 +217,22 @@ async def receive_scheduler_info(update:Update, context:ContextTypes.DEFAULT_TYP
         return ASK_SCHEDULER_INFO
     context.user_data['scheduler_info'] = text
 
-    dates = next_n_sunthu(10)
-    keyboard = []
-    row = []
-    for i, d in enumerate(dates):
-        row.append(InlineKeyboardButton(d, callback_data=f"date:{d}"))
-        if len(row) == 2:
-            keyboard.append(row)
-            row = []
-    if row:
-        keyboard.append(row)
-
-    await update.message.reply_text("من فضلك اختار موعد للزيارة", reply_markup=InlineKeyboardMarkup(keyboard))
-    return ASK_DATE
-
-async def receive_date_callback(update:Update, context:ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    date_str = query.data.split(":",1)[1]
-    user = query.from_user
-
-    if user_has_booking_for_date(user.id, date_str):
-        await query.edit_message_text(f"بالفعل لديك موعد محدد {date_str}. لا تستطيع الحجز مرة أخرى الآن")
-        return ConversationHandler.END
-    if count_approved_for_date(date_str) >= 15:
-        await query.edit_message_text(f"{date_str} التاريخ المحدد ممتلئ. برجاء اختيار موعد آخر")
-        return ConversationHandler.END
-
-    option = context.user_data.get('option', '')
-    scheduler_info = context.user_data.get('scheduler_info', '')
-    booking_id = create_booking(user.id, user.username or "", option, scheduler_info, date_str)
+    user = update.message.from_user
+    booking_id = create_booking(user.id, user.username or "",
+                                context.user_data['option'],
+                                context.user_data['scheduler_info'])
 
     caption = (
         f"New booking #{booking_id}\n"
         f"User: {user.full_name} (@{user.username})\n"
         f"UserID: {user.id}\n"
-        f"Option: {option}\n"
-        f"Scheduler: {scheduler_info}\n"
-        f"Date: {date_str}"
+        f"Option: {context.user_data['option']}\n"
+        f"Scheduler: {context.user_data['scheduler_info']}\n"
+        f"Date: (To be assigned upon approval)"
     )
 
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("Approve", callback_data=f"approve:{booking_id}"),
-         InlineKeyboardButton("Reject", callback_data=f"reject:{booking_id}")]
-    ])
+    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("Approve", callback_data=f"approve:{booking_id}"),
+                                      InlineKeyboardButton("Reject", callback_data=f"reject:{booking_id}")]])
 
     for admin_id in ADMIN_IDS:
         try:
@@ -265,20 +241,22 @@ async def receive_date_callback(update:Update, context:ContextTypes.DEFAULT_TYPE
         except Exception as e:
             logger.exception("Failed to send booking %s to admin %s: %s", booking_id, admin_id, e)
 
-    await query.edit_message_text("تم إرسال الطلب في انتظار موافقة المسئولين لتأكيد حجزك")
+    await update.message.reply_text("تم إرسال الطلب في انتظار موافقة المسئولين لتأكيد حجزك")
     return ConversationHandler.END
 
 async def admin_approve_reject(update:Update, context:ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     admin = query.from_user
-    action, booking_id_str = query.data.split(":",1)
+    data = query.data
+    if not data:
+        return
+    action, booking_id_str = data.split(":",1)
     booking_id = int(booking_id_str)
     booking = get_booking(booking_id)
     if not booking:
         await query.edit_message_text("لم يتم تحديد موعد")
         return
-
     _, user_id, username, option, scheduler_info, date_str, status = booking
 
     # Remove buttons for all admins
@@ -290,18 +268,18 @@ async def admin_approve_reject(update:Update, context:ContextTypes.DEFAULT_TYPE)
     clear_admin_messages(booking_id)
 
     if action == "approve":
-        if count_approved_for_date(date_str) >= 15:
+        assigned_date = earliest_available_date()
+        if not assigned_date:
             set_booking_status(booking_id, "REJECTED")
-            for a in ADMIN_IDS:
-                await context.bot.send_message(chat_id=a, text=f"Booking #{booking_id} auto-rejected (date {date_str} is full).")
-            await context.bot.send_message(chat_id=user_id, text=f"حجزك #{booking_id} لـ {date_str} تم رفضه تلقائيًا: التاريخ ممتلئ.")
-            await query.edit_message_text(f"Booking #{booking_id} auto-rejected (full).")
+            await context.bot.send_message(chat_id=user_id, text=f"حجزك #{booking_id} لم يتم قبوله: لا توجد مواعيد متاحة")
             return
+
         set_booking_status(booking_id, "APPROVED")
+        set_booking_date(booking_id, assigned_date)
         for a in ADMIN_IDS:
-            await context.bot.send_message(chat_id=a, text=f"Booking #{booking_id} for {date_str} approved by {admin.first_name}.")
-        await context.bot.send_message(chat_id=user_id, text=f"تمت الموافقة على حجزك #{booking_id} لـ {date_str} من قبل {admin.first_name}.")
-        await query.edit_message_text(f"Booking #{booking_id} APPROVED by {admin.first_name}.")
+            await context.bot.send_message(chat_id=a, text=f"Booking #{booking_id} approved by {admin.first_name}. Assigned date: {assigned_date}")
+        await context.bot.send_message(chat_id=user_id, text=f"تمت الموافقة على حجزك #{booking_id}. التاريخ المخصص لك هو: {assigned_date}")
+        await query.edit_message_text(f"Booking #{booking_id} APPROVED by {admin.first_name}. Assigned date: {assigned_date}")
         return
 
     if action == "reject":
@@ -326,8 +304,8 @@ async def admin_rejection_reason_handler(update:Update, context:ContextTypes.DEF
     _, user_id, username, option, scheduler_info, date_str, status = booking
     set_booking_status(booking_id, "REJECTED")
     for a in ADMIN_IDS:
-        await context.bot.send_message(chat_id=a, text=f"Booking #{booking_id} for {date_str} was rejected by {admin.first_name}. Reason: {reason}")
-    await context.bot.send_message(chat_id=user_id, text=f"تم رفض حجزك #{booking_id} لـ {date_str} من قبل {admin.first_name}.\nالسبب: {reason}")
+        await context.bot.send_message(chat_id=a, text=f"Booking #{booking_id} was rejected by {admin.first_name}. Reason: {reason}")
+    await context.bot.send_message(chat_id=user_id, text=f"تم رفض حجزك #{booking_id} من قبل {admin.first_name}.\nالسبب: {reason}")
     await update.message.reply_text(f"تم رفض الحجز #{booking_id} وإرسال الإشعارات.")
 
 async def cancel_handler(update:Update, context:ContextTypes.DEFAULT_TYPE):
@@ -344,7 +322,6 @@ def main():
         states={
             ASK_OPTION: [CallbackQueryHandler(receive_option, pattern=r"^option:")],
             ASK_SCHEDULER_INFO: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_scheduler_info)],
-            ASK_DATE: [CallbackQueryHandler(receive_date_callback, pattern=r"^date:")],
         },
         fallbacks=[
             CommandHandler("cancel", cancel_handler),
@@ -352,7 +329,7 @@ def main():
             CommandHandler("mybookings", mybookings_handler),
             CommandHandler("help", help_handler)
         ],
-        allow_reentry=True  # <-- THIS IS THE KEY
+        allow_reentry=True
     )
 
     app.add_handler(CommandHandler("start", start))
@@ -360,8 +337,8 @@ def main():
     app.add_handler(CallbackQueryHandler(admin_approve_reject, pattern=r"^(approve|reject):"))
     app.add_handler(MessageHandler(filters.TEXT & filters.User(ADMIN_IDS), admin_rejection_reason_handler))
     app.add_handler(CommandHandler("mybookings", mybookings_handler))
-    app.add_handler(CommandHandler("help", help_handler))
     app.add_handler(CommandHandler("cancel", cancel_handler))
+    app.add_handler(CommandHandler("help", help_handler))
 
     logger.info("Bot starting...")
     app.run_polling()
