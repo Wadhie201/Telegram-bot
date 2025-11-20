@@ -192,7 +192,7 @@ async def mybookings_handler(update:Update, context:ContextTypes.DEFAULT_TYPE):
 async def start(update:Update, context:ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
     "اهلا بك في هيئة الدواء المصرية فرع المنيا — يمكنك التقديم لحجز موعد لتقديم طلبك الأن برجاء الضغط علي زر MENU للبدء\n"
-    "برجاء الانتباه ان مقدم الطلب يجب ان يكون صاحب المؤسسة الصيدلية او موكل عنه"
+    " برجاء الانتباه ان مقدم الطلب يجب ان يكون صاحب المؤسسة الصيدلية او موكل عنه وأن الدخول بأسبقية التواجد بمقر الهيئة"
 )
 
 
@@ -271,19 +271,34 @@ async def admin_approve_reject(update:Update, context:ContextTypes.DEFAULT_TYPE)
     clear_admin_messages(booking_id)
 
     if action == "approve":
-        assigned_date = earliest_available_date()
-        if not assigned_date:
+        if count_approved_for_date(date_str) >= 15:
             set_booking_status(booking_id, "REJECTED")
-            await context.bot.send_message(chat_id=user_id, text=f"حجزك #{booking_id} لم يتم قبوله: لا توجد مواعيد متاحة")
+            for a in ADMIN_IDS:
+                await context.bot.send_message(chat_id=a, text=f"Booking #{booking_id} auto-rejected (date {date_str} is full).")
+            await context.bot.send_message(chat_id=user_id, text=f"حجزك #{booking_id} لـ {date_str} تم رفضه تلقائيًا: التاريخ ممتلئ.")
+            await query.edit_message_text(f"Booking #{booking_id} auto-rejected (full).")
             return
-
+    
+        # Approve booking
         set_booking_status(booking_id, "APPROVED")
-        set_booking_date(booking_id, assigned_date)
+        
+        details_text = (
+            f"Booking #{booking_id} approved by {admin.first_name}\n"
+            f"Assigned date: {date_str}\n"
+            f"Option: {option}\n"
+            f"Scheduler: {scheduler_info}"
+        )
+    
+        # Notify all admins
         for a in ADMIN_IDS:
-            await context.bot.send_message(chat_id=a, text=f"Booking #{booking_id} approved by {admin.first_name}. Assigned date: {assigned_date}")
-        await context.bot.send_message(chat_id=user_id, text=f"تمت الموافقة على حجزك #{booking_id}. التاريخ المخصص لك هو: {assigned_date}")
-        await query.edit_message_text(f"Booking #{booking_id} APPROVED by {admin.first_name}. Assigned date: {assigned_date}")
+            await context.bot.send_message(chat_id=a, text=details_text)
+    
+        # Notify user
+        await context.bot.send_message(chat_id=user_id, text=f"تمت الموافقة على حجزك #{booking_id} لـ {date_str} من قبل {admin.first_name}.\nOption: {option}\nScheduler: {scheduler_info}")
+    
+        await query.edit_message_text(f"Booking #{booking_id} APPROVED by {admin.first_name}.")
         return
+    
 
     if action == "reject":
         pending_rejections[admin.id] = booking_id
