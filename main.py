@@ -190,13 +190,17 @@ async def mybookings_handler(update:Update, context:ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("حجوزاتك:\n" + "\n".join(lines))
 
 async def start(update:Update, context:ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("اهلا بك في هيئة الدواء المصرية فرع لمنيا — يمكنك حجز موعد لتقديم طلبك الأن برجاء الضغط علي زر MENU للبدء")
+    await update.message.reply_text(
+    "اهلا بك في هيئة الدواء المصرية فرع المنيا — يمكنك التقديم لحجز موعد لتقديم طلبك الأن برجاء الضغط علي زر MENU للبدء\n"
+    "برجاء الانتباه ان مقدم الطلب يجب ان يكون صاحب المؤسسة الصيدلية او موكل عنه"
+)
+
 
 async def schedule_start(update:Update, context:ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     keyboard = [
-        [InlineKeyboardButton("فتح", callback_data="option:فتح")],
-        [InlineKeyboardButton("غلق", callback_data="option:غلق")],
+        [InlineKeyboardButton("فتح منشأة صيدلية", callback_data="option:فتح")],
+        [InlineKeyboardButton("غلق منشأة صيدلية", callback_data="option:غلق")],
         [InlineKeyboardButton("فتح وغلق", callback_data="option:فتح وغلق")]
     ]
     await update.message.reply_text("برجاء اختيار نوع الحجز:", reply_markup=InlineKeyboardMarkup(keyboard))
@@ -207,7 +211,7 @@ async def receive_option(update:Update, context:ContextTypes.DEFAULT_TYPE):
     await query.answer()
     option = query.data.split(":",1)[1]
     context.user_data['option'] = option
-    await query.edit_message_text("من فضلك ارسل اسم المٌجدول ورقم التعريف الخاص به")
+    await query.edit_message_text("من فضلك ارسل اسم صاحب المؤسسة الصيدلية ورقم الترخيص")
     return ASK_SCHEDULER_INFO
 
 async def receive_scheduler_info(update:Update, context:ContextTypes.DEFAULT_TYPE):
