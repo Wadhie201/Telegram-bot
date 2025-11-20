@@ -166,7 +166,7 @@ async def set_commands(app):
     ])
 
 async def start(update:Update, context:ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("اهلا بك في هيئة الدواء المصرية فرع لمنيا — يمكنك حجز موعد لتقديم طلبك الأن برجاء الضغط علي زر وسيتم الارسال لاحد المديرين للتحقق من طلبكMENU للبدء")
+    await update.message.reply_text(" اهلا بك في هيئة الدواء المصرية فرع لمنيا — يمكنك حجز موعد لتقديم طلبك الأن وسيتم الارسال لاحد المديرين للتحقق من طلبك, برجاء الضغط علي Menu للبدء")
 
 async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = (
