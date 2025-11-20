@@ -131,6 +131,17 @@ def get_booking(booking_id:int):
     conn.close()
     return row
 
+def next_available_date():
+    """Return the next Sun–Thu date with less than 15 approved bookings."""
+    today = datetime.utcnow().date()
+    d = today
+    while True:
+        d += timedelta(days=1)
+        if d.weekday() in (6,0,1,2,3):  # Sun-Thu
+            if count_approved_for_date(d.isoformat()) < 15:
+                return d.isoformat()
+
+
 def get_user_bookings(user_id:int):
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
@@ -271,40 +282,47 @@ async def admin_approve_reject(update:Update, context:ContextTypes.DEFAULT_TYPE)
     clear_admin_messages(booking_id)
 
     if action == "approve":
-        if count_approved_for_date(date_str) >= 15:
-            set_booking_status(booking_id, "REJECTED")
-            for a in ADMIN_IDS:
-                await context.bot.send_message(chat_id=a, text=f"Booking #{booking_id} auto-rejected (date {date_str} is full).")
-            await context.bot.send_message(chat_id=user_id, text=f"حجزك #{booking_id} لـ {date_str} تم رفضه تلقائيًا: التاريخ ممتلئ.")
-            await query.edit_message_text(f"Booking #{booking_id} auto-rejected (full).")
-            return
+        # Step 1: Assign next available date
+        assigned_date = next_available_date()  # You need to define this helper
     
-        # Approve booking
-        set_booking_status(booking_id, "APPROVED")
-        
+        # Step 2: Update booking in DB with assigned date and status
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
+        cur.execute("UPDATE bookings SET date = ?, status = 'APPROVED' WHERE id = ?", (assigned_date, booking_id))
+        conn.commit()
+        conn.close()
+    
+        # Step 3: Prepare message with assigned date
         details_text = (
             f"Booking #{booking_id} approved by {admin.first_name}\n"
-            f"Assigned date: {date_str}\n"
+            f"Assigned date: {assigned_date}\n"
             f"Option: {option}\n"
             f"Scheduler: {scheduler_info}"
         )
     
-        # Notify all admins
+        # Step 4: Notify all admins
         for a in ADMIN_IDS:
             await context.bot.send_message(chat_id=a, text=details_text)
     
-        # Notify user
-        await context.bot.send_message(chat_id=user_id, text=f"تمت الموافقة على حجزك #{booking_id} لـ {date_str} من قبل {admin.first_name}.\nOption: {option}\nScheduler: {scheduler_info}")
+        # Step 5: Notify user
+        await context.bot.send_message(
+            chat_id=user_id,
+            text=(
+                f"تمت الموافقة على حجزك #{booking_id} لـ {assigned_date} من قبل {admin.first_name}.\n"
+                f"Option: {option}\n"
+                f"Scheduler: {scheduler_info}"
+            )
+        )
     
         await query.edit_message_text(f"Booking #{booking_id} APPROVED by {admin.first_name}.")
         return
     
-
     if action == "reject":
         pending_rejections[admin.id] = booking_id
         await context.bot.send_message(chat_id=admin.id, text=f"برجاء إرسال سبب رفض الحجز #{booking_id}. الرسالة القادمة سيتم اعتمادها كسبب.")
         await query.edit_message_text(f"انتظار سبب الرفض من {admin.first_name}...")
         return
+
 
 async def admin_rejection_reason_handler(update:Update, context:ContextTypes.DEFAULT_TYPE):
     admin = update.message.from_user
