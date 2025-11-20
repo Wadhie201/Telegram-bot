@@ -294,10 +294,10 @@ async def admin_approve_reject(update:Update, context:ContextTypes.DEFAULT_TYPE)
     
         # Step 3: Prepare message with assigned date
         details_text = (
-            f"Booking #{booking_id} approved by {admin.first_name}\n"
-            f"Assigned date: {assigned_date}\n"
-            f"Option: {option}\n"
-            f"Scheduler: {scheduler_info}"
+            f"تم حجز موعد برقم #{booking_id} وتمت الموافقة عليه بمعرفة {admin.first_name}\n"
+            f" تاريخ الحجز: {assigned_date}\n"
+            f"نوع الاجراء: {option}\n"
+            f"مقدم الطلب: {scheduler_info}"
         )
     
         # Step 4: Notify all admins
@@ -309,8 +309,8 @@ async def admin_approve_reject(update:Update, context:ContextTypes.DEFAULT_TYPE)
             chat_id=user_id,
             text=(
                 f"تمت الموافقة على حجزك #{booking_id} لـ {assigned_date} من قبل {admin.first_name}.\n"
-                f"Option: {option}\n"
-                f"Scheduler: {scheduler_info}"
+                f"نوع الاجراء: {option}\n"
+                f"مقدم الطلب: {scheduler_info}"
             )
         )
     
