@@ -155,13 +155,28 @@ def next_n_sunthu(n:int=10):
     return dates
 
 # --- Bot handlers ---
-async def set_commands(app):
-    await app.bot.set_my_commands([
-        ('start','إبدأ من جديد'),
-        ('schedule','حجز موعد'),
-        ('mybookings','عرض مواعيدي'),
-        ('cancel','الغاء العملية الحالية')
-    ])
+# --- New /help command ---
+async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    help_text = (
+        "Available Commands:\n\n"
+        "/start — إبدأ من جديد\n"
+        "/schedule — حجز موعد\n"
+        "/mybookings — عرض مواعيدي\n"
+        "/cancel — الغاء العملية الحالية\n"
+        "/help — قائمة الأوامر هذه"
+    )
+    await update.message.reply_text(help_text)
+
+# --- Ensure /mybookings handler exists for users ---
+async def mybookings_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.message.from_user
+    rows = get_user_bookings(user.id)
+    if not rows:
+        await update.message.reply_text("ليس لديك أي حجوزات.")
+        return
+    lines = [f"#{r[0]} — {r[1]} — {r[2]}" for r in rows]
+    await update.message.reply_text("حجوزاتك:\n" + "\n".join(lines))
+
 
 async def start(update:Update, context:ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("اهلا بك في هيئة الدواء المصرية فرع لمنيا — يمكنك حجز موعد لتقديم طلبك الأن برجاء الضغط علي زر MENU للبدء")
@@ -350,6 +365,7 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & filters.User(ADMIN_IDS), admin_rejection_reason_handler))
     app.add_handler(CommandHandler("mybookings", mybookings_handler))
     app.add_handler(CommandHandler("cancel", cancel_handler))
+    app.add_handler(CommandHandler("help", help_handler))
 
     logger.info("Bot starting...")
     app.run_polling()
