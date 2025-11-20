@@ -166,7 +166,7 @@ async def set_commands(app):
     ])
 
 async def start(update:Update, context:ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("اهلا بك في هيئة الدواء المصرية فرع لمنيا — يمكنك حجز موعد لتقديم طلبك الأن برجاء الضغط علي زر MENU للبدء")
+    await update.message.reply_text("اهلا بك في هيئة الدواء المصرية فرع لمنيا — يمكنك حجز موعد لتقديم طلبك الأن برجاء الضغط علي زر وسيتم الارسال لاحد المديرين للتحقق من طلبكMENU للبدء")
 
 async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = (
@@ -203,7 +203,7 @@ async def receive_option(update:Update, context:ContextTypes.DEFAULT_TYPE):
     await query.answer()
     option = query.data.split(":",1)[1]
     context.user_data['option'] = option
-    await query.edit_message_text("من فضلك ارسل اسم المٌجدول ورقم التعريف الخاص به")
+    await query.edit_message_text("من فضلك ارسل اسم المٌجدول ورقم التعريف الخاص به في نفس الرسالة")
     return ASK_SCHEDULER_INFO
 
 async def receive_scheduler_info(update:Update, context:ContextTypes.DEFAULT_TYPE):
@@ -351,7 +351,8 @@ def main():
             CommandHandler("start", start),
             CommandHandler("mybookings", mybookings_handler),
             CommandHandler("help", help_handler)
-        ]
+        ],
+        allow_reentry=True  # <-- THIS IS THE KEY
     )
 
     app.add_handler(CommandHandler("start", start))
