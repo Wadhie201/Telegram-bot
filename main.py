@@ -81,6 +81,26 @@ def count_user_bookings(user_id, status=None):
     return result
 
 
+def count_user_bookings_for_date(user_id, date_str, status=None):
+    conn = sqlite3.connect("bot.db")
+    c = conn.cursor()
+
+    if status:
+        c.execute(
+            "SELECT COUNT(*) FROM bookings WHERE user_id=? AND date=? AND status=?",
+            (user_id, date_str, status)
+        )
+    else:
+        c.execute(
+            "SELECT COUNT(*) FROM bookings WHERE user_id=? AND date=?",
+            (user_id, date_str)
+        )
+
+    result = c.fetchone()[0]
+    conn.close()
+    return result
+
+
 def create_booking(user_id:int, username:str, option:str, scheduler_info:str) -> int:
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
@@ -318,7 +338,28 @@ async def admin_approve_reject(update:Update, context:ContextTypes.DEFAULT_TYPE)
     if action == "approve":
         # Step 1: Assign next available date
         assigned_date = next_available_date()  # You need to define this helper
+
+    # --- Per-day user limits ---
+    pending_for_date = count_user_bookings_for_date(user_id, date_str, status="PENDING")
+    approved_for_date = count_user_bookings_for_date(user_id, date_str, status="APPROVED")
     
+    # Max 1 pending per day
+    if pending_for_date >= 1:
+        await context.bot.send_message(
+            chat_id=admin.id,
+            text=f"لا يمكن الموافقة: المستخدم لديه بالفعل حجز واحد قيد المراجعة لنفس اليوم {date_str}"
+        )
+        return
+    
+    # Max 2 approved per day
+    if approved_for_date >= 2:
+        await context.bot.send_message(
+            chat_id=admin.id,
+            text=f"لا يمكن الموافقة: المستخدم لديه بالفعل حجزين معتمدين لنفس اليوم {date_str}"
+        )
+        return
+
+        
         # Step 2: Update booking in DB with assigned date and status
         conn = sqlite3.connect(DB_PATH)
         cur = conn.cursor()
