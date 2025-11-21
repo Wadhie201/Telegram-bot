@@ -67,6 +67,20 @@ def init_db():
     conn.commit()
     conn.close()
 
+def count_user_bookings(user_id, status=None):
+    conn = sqlite3.connect("bot.db")
+    c = conn.cursor()
+
+    if status:
+        c.execute("SELECT COUNT(*) FROM bookings WHERE user_id=? AND status=?", (user_id, status))
+    else:
+        c.execute("SELECT COUNT(*) FROM bookings WHERE user_id=?", (user_id,))
+
+    result = c.fetchone()[0]
+    conn.close()
+    return result
+
+
 def create_booking(user_id:int, username:str, option:str, scheduler_info:str) -> int:
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
@@ -209,6 +223,26 @@ async def start(update:Update, context:ContextTypes.DEFAULT_TYPE):
 
 async def schedule_start(update:Update, context:ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
+    # --- Booking limits ---
+    user_id = update.effective_user.id
+    
+    pending = count_user_bookings(user_id, status="PENDING")
+    approved = count_user_bookings(user_id, status="APPROVED")
+    
+    # 1 pending limit
+    if pending >= 1:
+        await update.message.reply_text(
+            "لديك طلب واحد قيد المراجعة بالفعل — لا يمكنك تقديم طلب جديد قبل يتم مراجعته."
+        )
+        return ConversationHandler.END
+    
+    # 2 approved limit
+    if approved >= 2:
+        await update.message.reply_text(
+            "لديك بالفعل حجزان تمت الموافقة عليهما — لا يمكنك إضافة المزيد حتى انتهاء موعد منهما."
+        )
+        return ConversationHandler.END
+
     keyboard = [
         [InlineKeyboardButton("فتح منشأة صيدلية", callback_data="option:فتح")],
         [InlineKeyboardButton("غلق منشأة صيدلية", callback_data="option:غلق")],
