@@ -163,14 +163,20 @@ def count_user_bookings_for_date(user_id:int, date_str:str, status=None):
     return result
 
 def next_available_date():
-    """Return the next Sun–Thu date with less than 15 approved bookings."""
+    """Return the earliest Sun–Thu date starting 6 days from today with <15 approved bookings."""
     today = datetime.utcnow().date()
-    d = today
+
+    # Start 6 days from today
+    d = today + timedelta(days=6)
+
     while True:
-        d += timedelta(days=1)
-        if d.weekday() in (6,0,1,2,3):  # Sun-Thu
+        # Sun=6, Mon=0, Tue=1, Wed=2, Thu=3
+        if d.weekday() in (6,0,1,2,3):
             if count_approved_for_date(d.isoformat()) < 15:
                 return d.isoformat()
+
+        d += timedelta(days=1)
+
 
 # --- Bot handlers ---
 async def set_commands(app):
