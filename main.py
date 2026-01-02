@@ -1,6 +1,6 @@
 """
 Telegram Scheduling Bot — Auto Date Assignment with Per-Day Limits
-Features:
+Featuress:
 - Multi-admin approval (ADMIN_IDS env var, comma-separated)
 - Users choose option (فتح — غلق) and provide scheduler info
 - Max reservations per day = 15
